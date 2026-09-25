@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exhibitor Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-2xl mx-auto bg-white p-8 rounded shadow">
+        <h1 class="text-2xl font-bold mb-6">Exhibitor Portal</h1>
+
+        <!-- Auth Container -->
+        <div id="auth-container">
+            {% csrf_token %}
+            <!-- Login -->
+            <div id="login-section">
+                <h2 class="text-xl mb-4">Exhibitor Login</h2>
+                <div class="space-y-4">
+                    <input type="text" id="username" placeholder="Username" class="w-full border p-2 rounded">
+                    <input type="password" id="password" placeholder="Password" class="w-full border p-2 rounded">
+                    <input type="text" id="device_name" placeholder="Device Name (e.g., Tablet-1)" class="w-full border p-2 rounded">
+                    <button onclick="login()" class="w-full bg-blue-600 text-white p-2 rounded">Login</button>
+                </div>
+                <p id="login-error" class="text-red-500 mt-2"></p>
+                <p class="mt-4 text-sm">Don't have an account? <button onclick="toggleAuth('signup')" class="text-blue-600 underline">Sign up</button></p>
+            </div>
+
+            <!-- Signup -->
+            <div id="signup-section" class="hidden">
+                <h2 class="text-xl mb-4">Exhibitor Registration</h2>
+                <div class="space-y-4">
+                    <input type="text" id="reg-username" placeholder="Username" class="w-full border p-2 rounded">
+                    <input type="password" id="reg-password" placeholder="Password" class="w-full border p-2 rounded">
+                    <input type="text" id="reg-name" placeholder="Exhibitor Name (e.g., Company XYZ)" class="w-full border p-2 rounded">
+                    <select id="reg-type" class="w-full border p-2 rounded">
+                        <option value="silver">Silver Plan (1 Device)</option>
+                        <option value="gold">Gold Plan (2 Devices)</option>
+                        <option value="platinum">Platinum Plan (3 Devices)</option>
+                    </select>
+                    <button onclick="registerExhibitor()" class="w-full bg-green-600 text-white p-2 rounded">Sign Up</button>
+                </div>
+                <p id="signup-error" class="text-red-500 mt-2"></p>
+                <p id="signup-success" class="text-green-600 mt-2 hidden">Registration successful! You can now log in.</p>
+                <p class="mt-4 text-sm">Already have an account? <button onclick="toggleAuth('login')" class="text-blue-600 underline">Log in</button></p>
+            </div>
+        </div>
+
+        <!-- Dashboard -->
+        <div id="dashboard-section" class="hidden">
+            <div class="flex justify-between items-center mb-6">
+                <div>
+                    <h2 class="text-xl font-bold" id="exhibitor-name"></h2>
+                    <p class="text-gray-600">Plan: <span id="exhibitor-plan" class="uppercase font-semibold"></span> | Max Devices: <span id="exhibitor-max"></span></p>
+                </div>
+                <button onclick="logout()" class="text-red-600">Logout</button>
+            </div>
+
+            <button onclick="startScanner()" class="w-full bg-green-600 text-white p-3 rounded mb-6 text-lg font-semibold hover:bg-green-700">Scan User QR</button>
+            
+            <div id="reader" class="mb-6 w-full hidden"></div>
+            
+            <div id="scan-result" class="hidden p-4 border rounded bg-gray-50">
+                <h3 class="font-bold text-lg mb-2">User Information</h3>
+                <p><strong>Name:</strong> <span id="user-name"></span></p>
+                <p><strong>Email:</strong> <span id="user-email"></span></p>
+                <p class="text-xl font-bold mt-2 text-blue-600">Score: <span id="user-score"></span></p>
+                
+                <h4 class="font-bold mt-4 mb-2">Responses:</h4>
+                <div id="user-answers" class="space-y-2 text-sm"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Generate a random device ID for this browser if none exists
+        if (!localStorage.getItem('device_id')) {
+            localStorage.setItem('device_id', 'device_' + Math.random().toString(36).substr(2, 9));
+        }
+        const deviceId = localStorage.getItem('device_id');
+        let html5QrcodeScanner = null;
+
+        // Check if logged in
+        async function checkAuth() {
+            const res = await fetch('/api/exhibitors/me/');
+            if (res.ok) {
+                const data = await res.json();
+                showDashboard(data);
+            }
+        }
+        checkAuth();
+
+        function toggleAuth(mode) {
+            if (mode === 'signup') {
+                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('signup-section').classList.remove('hidden');
+                document.getElementById('signup-error').innerText = '';
+                document.getElementById('signup-success').classList.add('hidden');
+            } else {
+                document.getElementById('login-section').classList.remove('hidden');
+                document.getElementById('signup-section').classList.add('hidden');
+                document.getElementById('login-error').innerText = '';
+            }
+        }
+
+        async function registerExhibitor() {
+            const username = document.getElementById('reg-username').value;
+            const password = document.getElementById('reg-password').value;
+            const exhibitor_name = document.getElementById('reg-name').value;
+            const type = document.getElementById('reg-type').value;
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+            const res = await fetch('/api/exhibitors/register/', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ username, password, exhibitor_name, type })
+            });
+            
+            const data = await res.json();
+            
+            if (res.ok) {
+                document.getElementById('signup-error').innerText = '';
+                document.getElementById('signup-success').classList.remove('hidden');
+                setTimeout(() => toggleAuth('login'), 2000);
+            } else {
+                document.getElementById('signup-error').innerText = JSON.stringify(data);
+            }
+        }
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const device_name = document.getElementById('device_name').value;
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+            
+            const res = await fetch('/api/exhibitors/login/', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({
+                    username, password, device_id: deviceId, device_name
+                })
+            });
+            
+            const data = await res.json();
+            
+            if (res.ok) {
+                showDashboard(data.exhibitor);
+                document.getElementById('login-error').innerText = '';
+            } else {
+                document.getElementById('login-error').innerText = data.error || "Login failed";
+            }
+        }
+
+        async function logout() {
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+            await fetch('/api/exhibitors/logout/', { 
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken }
+            });
+            document.getElementById('auth-container').classList.remove('hidden');
+            toggleAuth('login');
+            document.getElementById('dashboard-section').classList.add('hidden');
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.clear();
+                document.getElementById('reader').classList.add('hidden');
+            }
+            document.getElementById('scan-result').classList.add('hidden');
+        }
+
+        function showDashboard(exhibitor) {
+            document.getElementById('auth-container').classList.add('hidden');
+            document.getElementById('dashboard-section').classList.remove('hidden');
+            
+            document.getElementById('exhibitor-name').innerText = exhibitor.exhibitor_name;
+            document.getElementById('exhibitor-plan').innerText = exhibitor.type;
+            document.getElementById('exhibitor-max').innerText = exhibitor.max_devices;
+        }
+
+        function startScanner() {
+            document.getElementById('reader').classList.remove('hidden');
+            document.getElementById('scan-result').classList.add('hidden');
+            
+            if (!html5QrcodeScanner) {
+                html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
+            }
+            
+            html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+        }
+
+        async function onScanSuccess(decodedText, decodedResult) {
+            // Stop scanner
+            html5QrcodeScanner.clear();
+            document.getElementById('reader').classList.add('hidden');
+            
+            // Fetch user info
+            const res = await fetch('/api/exhibitors/scan/' + encodeURIComponent(decodedText) + '/');
+            const data = await res.json();
+            
+            if (res.ok) {
+                document.getElementById('scan-result').classList.remove('hidden');
+                document.getElementById('user-name').innerText = data.name;
+                document.getElementById('user-email').innerText = data.email;
+                document.getElementById('user-score').innerText = data.score;
+                
+                let answersHtml = '';
+                for (const [q_id, ans] of Object.entries(data.answers)) {
+                    answersHtml += `<div class="p-2 border rounded bg-white">
+                        <p class="font-semibold text-gray-700">${ans.question}</p>
+                        <p>Answer: <span class="font-medium">${ans.answer}</span> (Score: ${ans.score})</p>
+                    </div>`;
+                }
+                document.getElementById('user-answers').innerHTML = answersHtml;
+            } else {
+                alert("Scan Error: " + (data.error || "Failed to retrieve user data"));
+            }
+        }
+
+        function onScanFailure(error) {
+            // handle scan failure, usually better to ignore and keep scanning
+        }
+    </script>
+</body>
+</html>

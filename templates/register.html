@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Franchise Registration</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-2xl mx-auto bg-white p-8 rounded shadow">
+        <h1 class="text-2xl font-bold mb-6">Franchise Registration</h1>
+        
+        <div id="registration-form">
+            {% csrf_token %}
+            <div class="mb-4">
+                <label class="block text-sm font-medium mb-1">Name</label>
+                <input type="text" id="name" class="w-full border rounded p-2" required>
+            </div>
+            
+            <div class="mb-6">
+                <label class="block text-sm font-medium mb-1">Email</label>
+                <input type="email" id="email" class="w-full border rounded p-2" required>
+            </div>
+
+            <div id="questions-container" class="space-y-6">
+                <!-- Questions will be loaded here via JS -->
+            </div>
+
+            <button onclick="submitRegistration()" class="mt-8 bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Submit</button>
+        </div>
+
+        <div id="success-screen" class="hidden text-center">
+            <h2 class="text-2xl font-bold text-green-600 mb-4">Registration Successful!</h2>
+            <p class="text-sm text-gray-500 mb-6">Your User ID: <span id="display-id"></span></p>
+            
+            <div id="qrcode" class="flex justify-center mb-4"></div>
+            
+            <p class="text-sm text-gray-600">Keep this QR code and show it to exhibitors at the event.</p>
+        </div>
+    </div>
+
+    <script>
+        let questionsData = [];
+
+        // Load questions
+        fetch('/api/users/questions/')
+            .then(res => res.json())
+            .then(data => {
+                questionsData = data;
+                renderQuestions();
+            });
+
+        function renderQuestions() {
+            const container = document.getElementById('questions-container');
+            data = questionsData;
+            
+            let html = '';
+            data.forEach((q, index) => {
+                html += `<div class="p-4 border rounded">
+                    <p class="font-medium mb-3">${index + 1}. ${q.text}</p>`;
+                
+                if (q.question_type === 'single') {
+                    q.options.forEach(opt => {
+                        html += `
+                        <label class="block mb-2">
+                            <input type="radio" name="${q.question_id}" value="${opt.text}" class="mr-2"> ${opt.text}
+                        </label>`;
+                    });
+                } else if (q.question_type === 'dropdown') {
+                    html += `<select name="${q.question_id}" class="w-full border rounded p-2">
+                        <option value="">Select an option...</option>`;
+                    q.options.forEach(opt => {
+                        html += `<option value="${opt.text}">${opt.text}</option>`;
+                    });
+                    html += `</select>`;
+                } else if (q.question_type === 'scale') {
+                    html += `<div class="flex gap-4">`;
+                    q.options.forEach(opt => {
+                        html += `
+                        <label class="flex flex-col items-center">
+                            <span>${opt.text}</span>
+                            <input type="radio" name="${q.question_id}" value="${opt.text}" class="mt-1">
+                        </label>`;
+                    });
+                    html += `</div>`;
+                }
+                
+                html += `</div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        async function submitRegistration() {
+            const name = document.getElementById('name').value;
+            const email = document.getElementById('email').value;
+            
+            const answers = {};
+            let allAnswered = true;
+            
+            questionsData.forEach(q => {
+                let value = null;
+                if (q.question_type === 'single' || q.question_type === 'scale') {
+                    const selected = document.querySelector(`input[name="${q.question_id}"]:checked`);
+                    if (selected) value = selected.value;
+                } else if (q.question_type === 'dropdown') {
+                    const select = document.querySelector(`select[name="${q.question_id}"]`);
+                    if (select && select.value) value = select.value;
+                }
+                
+                if (!value) {
+                    allAnswered = false;
+                } else {
+                    answers[q.question_id] = value;
+                }
+            });
+
+            if (!name || !email) {
+                alert("Please fill in your name and email.");
+                return;
+            }
+
+            if (!allAnswered) {
+                alert("Please answer all questions.");
+                return;
+            }
+
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+            const response = await fetch('/api/users/register/', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ name, email, answers })
+            });
+
+            const result = await response.json();
+            
+            if (response.ok) {
+                document.getElementById('registration-form').classList.add('hidden');
+                document.getElementById('success-screen').classList.remove('hidden');
+                
+                document.getElementById('display-id').innerText = result.user_id;
+                
+                new QRCode(document.getElementById("qrcode"), {
+                    text: result.qr_token,
+                    width: 256,
+                    height: 256
+                });
+            } else {
+                alert("Error: " + JSON.stringify(result));
+            }
+        }
+    </script>
+</body>
+</html>
