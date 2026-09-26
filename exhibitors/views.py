@@ -4,7 +4,7 @@ from rest_framework import status
 from django.contrib.auth import authenticate, login, logout
 from django.core.signing import Signer, BadSignature
 from django.shortcuts import get_object_or_404
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 
 from .models import Exhibitor, ExhibitorDevice, ScanLog
 from .serializers import ExhibitorSerializer, ExhibitorDeviceSerializer, LoginSerializer, ExhibitorRegistrationSerializer
@@ -17,6 +17,9 @@ from django.contrib.auth.models import User
 signer = Signer()
 
 class ExhibitorRegistrationView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    
     def post(self, request):
         serializer = ExhibitorRegistrationSerializer(data=request.data)
         if serializer.is_valid():
@@ -37,6 +40,9 @@ class ExhibitorRegistrationView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class ExhibitorLoginView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
@@ -69,6 +75,13 @@ class ExhibitorLoginView(APIView):
 
 class ExhibitorLogoutView(APIView):
     def post(self, request):
+        if request.user.is_authenticated and hasattr(request.user, 'exhibitor'):
+            device_id = request.data.get('device_id') or request.session.get('device_id')
+            if device_id:
+                device = ExhibitorDevice.objects.filter(exhibitor=request.user.exhibitor, device_id=device_id).first()
+                if device:
+                    device.is_active = False
+                    device.save()
         logout(request)
         return Response({"message": "Logout successful"})
 
