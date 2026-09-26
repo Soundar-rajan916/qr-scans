@@ -73,15 +73,34 @@ class ExhibitorLoginView(APIView):
                 return Response({"error": "Invalid credentials or not an exhibitor"}, status=status.HTTP_401_UNAUTHORIZED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+from django.utils import timezone
+from .models import Exhibitor, ExhibitorDevice, ScanLog, ExhibitorDeviceSession
+
 class ExhibitorLogoutView(APIView):
     def post(self, request):
+        print("========== LOGOUT API CALLED ==========")
+        print("USER:", request.user)
+        print("AUTHENTICATED:", request.user.is_authenticated)
+        print("=======================================")
+
         if request.user.is_authenticated and hasattr(request.user, 'exhibitor'):
             device_id = request.data.get('device_id') or request.session.get('device_id')
             if device_id:
                 device = ExhibitorDevice.objects.filter(exhibitor=request.user.exhibitor, device_id=device_id).first()
                 if device:
-                    device.is_active = False
-                    device.save()
+                    session = ExhibitorDeviceSession.objects.filter(device=device, logout_time__isnull=True).first()
+                    if session:
+                        session.logout_time = timezone.now()
+                        session.save(update_fields=['logout_time'])
+                        
+                        session.refresh_from_db()
+                        print(
+                            "LOGOUT SESSION:",
+                            session.id,
+                            session.device.device_id,
+                            session.logout_time
+                        )
+                    
         logout(request)
         return Response({"message": "Logout successful"})
 
@@ -110,8 +129,10 @@ class ExhibitorDeviceDeactivateView(APIView):
             return Response({"error": "Not an exhibitor"}, status=status.HTTP_403_FORBIDDEN)
         
         device = get_object_or_404(ExhibitorDevice, exhibitor=request.user.exhibitor, device_id=device_id)
-        device.is_active = False
-        device.save()
+        session = ExhibitorDeviceSession.objects.filter(device=device, logout_time__isnull=True).first()
+        if session:
+            session.logout_time = timezone.now()
+            session.save(update_fields=['logout_time'])
         
         return Response({"message": "Device deactivated successfully"})
 

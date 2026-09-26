@@ -1,4 +1,4 @@
-from .models import ExhibitorDevice
+from .models import ExhibitorDevice, ExhibitorDeviceSession
 
 class DeviceLimitReached(Exception):
     pass
@@ -7,24 +7,30 @@ def register_or_update_device(exhibitor, device_id, device_name=""):
     device, created = ExhibitorDevice.objects.get_or_create(
         exhibitor=exhibitor,
         device_id=device_id,
-        defaults={'device_name': device_name, 'is_active': True}
+        defaults={'device_name': device_name}
     )
     
-    if not created and not device.is_active:
-        # Trying to reactivate a device
-        active_count = ExhibitorDevice.objects.filter(exhibitor=exhibitor, is_active=True).count()
+    # Check open sessions for this exhibitor
+    active_count = ExhibitorDeviceSession.objects.filter(
+        device__exhibitor=exhibitor,
+        logout_time__isnull=True
+    ).count()
+
+    # Check if this exact device already has an open session
+    has_open_session = ExhibitorDeviceSession.objects.filter(
+        device=device,
+        logout_time__isnull=True
+    ).exists()
+
+    if not has_open_session:
+        # Before creating a new session, ensure we haven't reached the limit
         if active_count >= exhibitor.max_devices:
-            raise DeviceLimitReached("Maximum active devices reached for your plan.")
-        device.is_active = True
-        device.save()
-    elif created:
-        # New device created, check limit. Since it was just created with is_active=True, 
-        # count includes this device.
-        active_count = ExhibitorDevice.objects.filter(exhibitor=exhibitor, is_active=True).count()
-        if active_count > exhibitor.max_devices:
-            device.delete() # rollback
+            # If the device was just created but we can't open a session, rollback the device creation
+            if created:
+                device.delete()
             raise DeviceLimitReached("Maximum active devices reached for your plan.")
             
-    # Update last login
-    device.save() # Triggers auto_now=True
+        # Create a new session
+        ExhibitorDeviceSession.objects.create(device=device)
+
     return device

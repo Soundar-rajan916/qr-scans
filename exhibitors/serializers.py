@@ -8,9 +8,15 @@ class ExhibitorSerializer(serializers.ModelSerializer):
         fields = ['exhibitor_id', 'exhibitor_name', 'type', 'max_devices']
 
 class ExhibitorDeviceSerializer(serializers.ModelSerializer):
+    status = serializers.SerializerMethodField()
+
     class Meta:
         model = ExhibitorDevice
-        fields = ['device_id', 'device_name', 'is_active', 'last_login', 'created_at']
+        fields = ['device_id', 'device_name', 'created_at', 'status']
+
+    def get_status(self, obj):
+        has_open_session = obj.sessions.filter(logout_time__isnull=True).exists()
+        return 'Active' if has_open_session else 'Logged Out'
 
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()

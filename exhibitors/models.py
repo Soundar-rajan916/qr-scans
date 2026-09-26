@@ -26,8 +26,6 @@ class ExhibitorDevice(models.Model):
     exhibitor = models.ForeignKey(Exhibitor, related_name='devices', on_delete=models.CASCADE)
     device_id = models.CharField(max_length=255) # Client provided unique identifier
     device_name = models.CharField(max_length=255, blank=True)
-    is_active = models.BooleanField(default=True)
-    last_login = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -35,6 +33,14 @@ class ExhibitorDevice(models.Model):
 
     def __str__(self):
         return f"{self.device_name or self.device_id} ({self.exhibitor.exhibitor_name})"
+
+class ExhibitorDeviceSession(models.Model):
+    device = models.ForeignKey(ExhibitorDevice, related_name='sessions', on_delete=models.CASCADE)
+    login_time = models.DateTimeField(auto_now_add=True)
+    logout_time = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Session for {self.device.device_name or self.device.device_id} ({self.login_time})"
 
 class ScanLog(models.Model):
     exhibitor = models.ForeignKey(Exhibitor, on_delete=models.CASCADE)
